@@ -1,6 +1,5 @@
 import os
 import re
-import subprocess
 from textwrap import dedent
 import uuid
 from pydantic import BaseModel
@@ -10,12 +9,14 @@ from io import StringIO
 from contextlib import redirect_stdout
 import time
 from os import listdir
-from rich import print
 from multiprocessing.pool import Pool
 import logging
 from pprint import pformat
+from rich.logging import RichHandler
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
+)
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
@@ -56,9 +57,9 @@ class CodingAssistantChat(BaseModel):
         begin_time = time.time()
         # TODO - Summarize older messages if the context gets too large.
         assistant_response = client.chat.completions.create(
-            model,
-            temperature=0,
             messages=self._messages,  # type: ignore
+            model=model,
+            temperature=0,
         )
 
         log.debug(pformat(assistant_response.choices[0].message.content))
@@ -153,7 +154,7 @@ class PyTestInvoker(BaseModel):
         """
         Return the exit code from the most recent run.
         0 means success, non-zero means failure. See https://docs.pytest.org/en/stable/reference/exit-codes.html
-       """
+        """
         return self._exit_code
 
     def log_lines(self) -> str:
@@ -176,7 +177,7 @@ class ParsedSolution(BaseModel):
 
 
 def load_solution_file(name: str) -> ParsedSolution:
-    with open(f"backend/coder/solutions/{name}.py", "r") as file:
+    with open(f"leetcode/solutions/{name}.py", "r") as file:
         contents = file.read()
         # Split the contents of the file into the problem description and the reference solution
         problem_description, reference_solution = contents.split("#" * 48)[1:3]
@@ -187,7 +188,7 @@ def load_solution_file(name: str) -> ParsedSolution:
 
 
 def load_test_file(name: str):
-    with open(f"backend/coder/tests/test_{name}.py", "r") as file:
+    with open(f"leetcode/tests/test_{name}.py", "r") as file:
         contents = file.read()
         return contents
 
@@ -210,7 +211,7 @@ def get_method_name(test_file_contents: str) -> str:
 def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
     try:
         parsed_solution: ParsedSolution = load_solution_file(test_name)
-        test_file = f"backend/coder/tests/test_{test_name}.py"
+        test_file = f"leetcode/tests/test_{test_name}.py"
         # Load the test file into a string.
         with open(test_file, "r") as file:
             test_file_contents = file.read()
@@ -227,7 +228,7 @@ def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
         chat = CodingAssistantChat()
         pytest_invoker = PyTestInvoker(test_name, test_file_contents)
 
-        while attempt <= 1:
+        while attempt <= 2:
             log.info("===========================================================")
             log.info(f"Attempt {attempt}")
             # Try a naive initial solution.
@@ -286,7 +287,7 @@ def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
             tokens_used=chat.tokens_used(),
         )
     except Exception as e:
-        print(f"Error: {e}")
+        log.error(f"Test {test_name} failed with error: {e}")
         return TestEvalMetrics(
             proposed_solution="",
             test_name=test_name,
@@ -307,7 +308,7 @@ class TotalEvalMetrics(BaseModel):
 def is_valid_test_file(test_file: str) -> bool:
     if test_file == "test_a0000blank.py":
         return False
-    with open("backend/coder/tests/" + test_file, "r") as f:
+    with open("leetcode/tests/" + test_file, "r") as f:
         contents = f.read()
     if "solution." not in contents:
         return False
@@ -330,7 +331,7 @@ if __name__ == "__main__":
 
     # Iterate the test directory
     test_names = []
-    for testlfile in listdir("backend/coder/tests"):
+    for testlfile in listdir("leetcode/tests"):
         if (
             testlfile.startswith("test_")
             and testlfile.endswith(".py")
@@ -340,33 +341,30 @@ if __name__ == "__main__":
 
     # Only run a subset
     # test_names = sorted(test_names)[1:10]
-
     # test_names = ["a0001twosum"]
-    # test_names = ["a0064minimumpathsum"]
-    # test_names = ["a0131palindromepartitioning"]
-    # test_names = ["a0133clonegraph"]
     # test_names = ["a0063uniquepathsii"]
 
-    print(f"Running {len(test_names)} tests")
+    log.info(f"Running {len(test_names)} tests")
     async_results = []
     results: list[TestEvalMetrics] = []
     # NB: ThreadPool does not play nicely with pytest.main()
     pool = Pool(processes=64)
     for test_name in test_names:
         # Spawn a thread
-        # Fake async, to debug multiprocessing issues.
-        # async_results += [(test_name, solve_leetcode_problem(test_name))]
         async_result = pool.apply_async(solve_leetcode_problem, args=(test_name,))
         async_results += [(test_name, async_result)]
+        # Fake async, to debug multiprocessing issues.
+        # async_results += [(test_name, solve_leetcode_problem(test_name))]
 
     # Wait for all threads
-    print("Waiting for tests to complete...")
+    log.info("Waiting for tests to complete...")
     for test_name, async_result in async_results:
         try:
             results += [async_result.get()]
-            # results += [async_result]
+            # Fake async
+            #results += [async_result]
         except Exception as e:
-            print(f"Test {test_name} failed with error: {e}")
+            log.error(f"Test {test_name} failed with error: {e}")
             results += [
                 TestEvalMetrics(
                     test_name=test_name,
@@ -391,11 +389,18 @@ if __name__ == "__main__":
     )
     for result in results:
         if result.exit_code != 0:
-            print(f"============= Test {result.test_name} Failed =============")
-            print(result.log_lines)
-            print(f"Proposed Solution:\n{result.proposed_solution}")
-            print("===========================================================")
-    print(
+            # Convert to log multiline
+            log.error(
+                dedent(f"""\
+                       ============= Test {result.test_name} Failed =============
+                       {result.log_lines}
+
+                       Proposed Solution:
+                       {result.proposed_solution}
+                       ===========================================================
+                       """)
+            )
+    log.info(
         dedent(f"""\
           Summary:
             Total Passed: {total_passed}
@@ -405,4 +410,3 @@ if __name__ == "__main__":
             AI tokens used: {sum([r.tokens_used for r in results])} (${sum([r.tokens_used for r in results])  * 0.5 / 1e6:.4f})
           """)
     )
-    print("Done")
