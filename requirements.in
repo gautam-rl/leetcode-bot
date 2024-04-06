@@ -2,3 +2,4 @@ openai
 pydantic
 pydantic_core
 pytest
+rich
