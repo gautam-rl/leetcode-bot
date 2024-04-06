@@ -194,7 +194,11 @@ def is_valid_test_file(test_file: str) -> bool:
         contents = f.read()
     if "solution." not in contents:
         # TODO - need to write custom classes
-        log.debug(f"Skipping {test_file} as it does not contain a solution.")
+        log.debug(f"Skipping {test_file} as it does not contain a Solution class")
+        return False
+    if "import Solution, Node" in contents:
+        # TODO - handle this case
+        log.debug(f"Skipping {test_file} as it uses custom classes.")
         return False
     return True
 
