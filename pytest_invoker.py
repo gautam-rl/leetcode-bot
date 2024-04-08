@@ -1,10 +1,10 @@
 import asyncio
-from asyncio.subprocess import Process
 import logging
 import os
 import subprocess
 import time
 import uuid
+from asyncio.subprocess import Process
 from contextlib import redirect_stdout
 from io import StringIO
 
@@ -57,32 +57,33 @@ class PyTestInvoker(BaseModel):
         subprocess.check_call(["rm", "-rf", TESTDIR])
         subprocess.check_call(["mkdir", "-p", TESTDIR])
         # Copy the utils/ tree into TESTDIR
-        subprocess.check_call(["cp", "-r", f"{os.path.dirname(__file__)}/leetcode/utils", f"{TESTDIR}/"])
+        subprocess.check_call(
+            ["cp", "-r", f"{os.path.dirname(__file__)}/leetcode/utils", f"{TESTDIR}/"]
+        )
 
         with open(tmp_testfile, "w") as file:
             file.write(test_file_with_candidate)
 
         # Run pytest and capture the exit code + result to a str.
-        log.info(f"Running test {self._test_name}...")
-        temp_stdout = StringIO()
-        with redirect_stdout(temp_stdout):
-            self._exit_code = pytest.main(["-v", tmp_testfile, f"--rootdir={TESTDIR}"])
-            self._log_lines = temp_stdout.getvalue()
+        # log.info(f"Running test {self._test_name}...")
+        # temp_stdout = StringIO()
+        # with redirect_stdout(temp_stdout):
+        #    self._exit_code = pytest.main(["-v", tmp_testfile, f"--rootdir={TESTDIR}"])
+        #    self._log_lines = temp_stdout.getvalue()
 
-        # TODO Run using async subprocess
-        #process = await asyncio.create_subprocess_exec(
-        #    program=f"pytest -v {tmp_testfile} --rootdir={TESTDIR}", stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        #)
-        #stdout,stderr = await process.communicate()
-        #self._log_lines = stdout.decode("utf-8")
-        #self._exit_code = process.returncode or -1
-
-        # Sync subprocess
-        # result: subprocess.CompletedProcess = subprocess.run(
-        #   ["pytest", "-v", tmp_testfile, f"--rootdir={TESTDIR}"], capture_output=True
-        # )
-        # self._exit_code = result.returncode
-        # self._log_lines = result.stdout.decode("utf-8")
+        # Run using async subprocess
+        process = await asyncio.create_subprocess_exec(
+            "pytest",
+            "-v",
+            tmp_testfile,
+            f"--rootdir={TESTDIR}",
+            cwd=TESTDIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        stdout, _ = await process.communicate()
+        self._log_lines = stdout.decode("utf-8")
+        self._exit_code = process.returncode if process.returncode is not None else -1
 
         # DEBUG: Uncomment to fake passing
         # exit_code = 0

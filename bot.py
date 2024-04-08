@@ -1,14 +1,14 @@
 import asyncio
-import re
-from textwrap import dedent
-from pydantic import BaseModel
-from os import listdir
-from multiprocessing.pool import Pool
 import logging
+import re
+from os import listdir
+from textwrap import dedent
+
+from pydantic import BaseModel
 from rich.logging import RichHandler
 
-from pytest_invoker import PyTestInvoker
 from chat import CodingAssistantChat
+from pytest_invoker import PyTestInvoker
 
 logging.basicConfig(
     level=logging.INFO, format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
@@ -147,7 +147,9 @@ async def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
 
             # The response code is often wrapped in markdown and some explanation. Extract just the inner code.
             candidate_solution = completion
-            candidate_solution = re.sub(r".*```python", "", candidate_solution, flags=re.S)
+            candidate_solution = re.sub(
+                r".*```python", "", candidate_solution, flags=re.S
+            )
             candidate_solution = re.sub(r"```.*", "", candidate_solution, flags=re.S)
             # candidate_solution = completion.replace("```python", "").replace("```", "").strip()
             log.debug(f"Attempt {attempt}: {candidate_solution}")
@@ -220,20 +222,11 @@ async def main():
     # test_names = ["a0092reverselinkedlistii"]
 
     log.info(f"Running {len(test_names)} tests")
-    async_results = []
     results: list[TestEvalMetrics] = []
-    # NB: ThreadPool does not play nicely with pytest.main()
-    #pool = Pool(processes=64)
     tasks = []
     for test_name in test_names:
         # Create an async task for each
         tasks += [(test_name, asyncio.create_task(solve_leetcode_problem(test_name)))]
-        #results += [asyncio.run(solve_leetcode_problem(test_name))]
-        # Spawn a thread
-        #async_result = pool.apply_async(solve_leetcode_problem, args=(test_name,))
-        #async_results += [(test_name, async_result)]
-        # Fake async, to debug multiprocessing issues.
-        # async_results += [(test_name, solve_leetcode_problem(test_name))]
 
     # Wait for all threads
     log.info("Waiting for tests to complete...")
@@ -241,9 +234,6 @@ async def main():
         try:
             # Await all results
             results += [await task]
-            #results += [async_result.get()]
-            # Fake async
-            # results += [async_result]
         except Exception as e:
             log.error(f"Test {test_name} failed with error: {e}")
             results += [
@@ -291,6 +281,7 @@ async def main():
             AI tokens used: {sum([r.tokens_used for r in results])} (${sum([r.tokens_used for r in results])  * 0.5 / 1e6:.4f})
           """)
     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
