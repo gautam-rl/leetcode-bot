@@ -1,3 +1,4 @@
+import asyncio
 import re
 from textwrap import dedent
 from pydantic import BaseModel
@@ -53,7 +54,7 @@ def get_method_name(test_file_contents: str) -> str:
     return re.search(r"solution\.(?P<method>\w+)", test_file_contents).group(0)  # type: ignore
 
 
-def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
+async def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
     try:
         parsed_solution: ParsedSolution = load_solution_file(test_name)
         test_file = f"leetcode/tests/test_{test_name}.py"
@@ -113,7 +114,7 @@ def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
                         Do not declare it in your response.
                         """
                     )
-                completion = chat.generate_completion(
+                completion: str = await chat.generate_completion(
                     f"""
                     Please solve the following problem in standard python without third-party libraries.
                     The response should only contain valid python3.12 code including all imports and types.
@@ -136,7 +137,7 @@ def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
                 )
             else:
                 # The previous attempt failed. We need to provide more context to the AI.
-                completion = chat.generate_completion(
+                completion: str = await chat.generate_completion(
                     f"""
                     The provided solution failed the test cases. Please explain what went wrong and propose a new solution.
                     
@@ -146,15 +147,13 @@ def solve_leetcode_problem(test_name: str) -> TestEvalMetrics:
 
             # The response code is often wrapped in markdown and some explanation. Extract just the inner code.
             candidate_solution = completion
-            candidate_solution = re.sub(
-                r".*```python", "", candidate_solution, flags=re.S
-            )
+            candidate_solution = re.sub(r".*```python", "", candidate_solution, flags=re.S)
             candidate_solution = re.sub(r"```.*", "", candidate_solution, flags=re.S)
             # candidate_solution = completion.replace("```python", "").replace("```", "").strip()
             log.debug(f"Attempt {attempt}: {candidate_solution}")
 
             # Run the test.
-            pytest_invoker.run_test(candidate_solution)
+            await pytest_invoker.run_test(candidate_solution)
             if pytest_invoker.exit_code() == 0:
                 break
             attempt += 1
@@ -203,7 +202,7 @@ def is_valid_test_file(test_file: str) -> bool:
     return True
 
 
-if __name__ == "__main__":
+async def main():
     # Walk the test directory. For each test, generate a solution and verify with a test.
     test_names = []
     for testlfile in listdir("leetcode/tests"):
@@ -224,19 +223,25 @@ if __name__ == "__main__":
     async_results = []
     results: list[TestEvalMetrics] = []
     # NB: ThreadPool does not play nicely with pytest.main()
-    pool = Pool(processes=64)
+    #pool = Pool(processes=64)
+    tasks = []
     for test_name in test_names:
+        # Create an async task for each
+        tasks += [(test_name, asyncio.create_task(solve_leetcode_problem(test_name)))]
+        #results += [asyncio.run(solve_leetcode_problem(test_name))]
         # Spawn a thread
-        async_result = pool.apply_async(solve_leetcode_problem, args=(test_name,))
-        async_results += [(test_name, async_result)]
+        #async_result = pool.apply_async(solve_leetcode_problem, args=(test_name,))
+        #async_results += [(test_name, async_result)]
         # Fake async, to debug multiprocessing issues.
         # async_results += [(test_name, solve_leetcode_problem(test_name))]
 
     # Wait for all threads
     log.info("Waiting for tests to complete...")
-    for test_name, async_result in async_results:
+    for test_name, task in tasks:
         try:
-            results += [async_result.get()]
+            # Await all results
+            results += [await task]
+            #results += [async_result.get()]
             # Fake async
             # results += [async_result]
         except Exception as e:
@@ -286,3 +291,6 @@ if __name__ == "__main__":
             AI tokens used: {sum([r.tokens_used for r in results])} (${sum([r.tokens_used for r in results])  * 0.5 / 1e6:.4f})
           """)
     )
+
+if __name__ == "__main__":
+    asyncio.run(main())

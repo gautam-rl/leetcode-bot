@@ -1,3 +1,5 @@
+import asyncio
+from asyncio.subprocess import Process
 import logging
 import os
 import subprocess
@@ -39,7 +41,7 @@ class PyTestInvoker(BaseModel):
         self._test_name = test_name
         self._test_file_contents = test_file_contents
 
-    def run_test(self, candidate_solution):
+    async def run_test(self, candidate_solution):
         # Replace the import ... with our Solution class from candidate_solution
         test_file_with_candidate = self._test_file_contents.replace(
             f"from solutions.{self._test_name} import Solution", candidate_solution
@@ -67,7 +69,15 @@ class PyTestInvoker(BaseModel):
             self._exit_code = pytest.main(["-v", tmp_testfile, f"--rootdir={TESTDIR}"])
             self._log_lines = temp_stdout.getvalue()
 
-        # Run using subprocess
+        # TODO Run using async subprocess
+        #process = await asyncio.create_subprocess_exec(
+        #    program=f"pytest -v {tmp_testfile} --rootdir={TESTDIR}", stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        #)
+        #stdout,stderr = await process.communicate()
+        #self._log_lines = stdout.decode("utf-8")
+        #self._exit_code = process.returncode or -1
+
+        # Sync subprocess
         # result: subprocess.CompletedProcess = subprocess.run(
         #   ["pytest", "-v", tmp_testfile, f"--rootdir={TESTDIR}"], capture_output=True
         # )

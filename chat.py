@@ -12,7 +12,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
-client = openai.Client()
+client = openai.AsyncClient()
 
 
 class CodingAssistantChat(BaseModel):
@@ -37,7 +37,7 @@ class CodingAssistantChat(BaseModel):
             },
         ]
 
-    def generate_completion(self, content: str, model="gpt-3.5-turbo") -> str:
+    async def generate_completion(self, content: str, model="gpt-3.5-turbo") -> str:
         # Add the user message to the chat history.
         self._add_user_message(content)
 
@@ -46,7 +46,7 @@ class CodingAssistantChat(BaseModel):
 
         begin_time = time.time()
         # TODO - Summarize older messages if the context gets too large.
-        assistant_response = client.chat.completions.create(
+        assistant_response = await client.chat.completions.create(
             messages=self._messages,  # type: ignore
             model=model,
             temperature=0,
